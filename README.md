@@ -285,7 +285,7 @@ Contributions are welcome! Please read [CONTRIBUTING.md](./CONTRIBUTING.md) for 
 ### Development Setup
 ```bash
 # Fork and clone
-git clone https://github.com/yourusername/revenue-leakage-detector.git
+git clone https://github.com/Etherlabs-dev/revenue-leakage-system.git
 
 # Create feature branch
 git checkout -b feature/your-feature
