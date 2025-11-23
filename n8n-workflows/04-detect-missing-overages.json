@@ -1,0 +1,354 @@
+{
+  "name": "04 - Detect Missing Overages",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-overages",
+      "name": "Every Day at 9 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "customers",
+        "returnAll": true
+      },
+      "id": "get-customers-ovg",
+      "name": "Get All Customers",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-creds",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "loop-customers-ovg",
+      "name": "Loop Through Customers",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "contract_pricing",
+        "filterType": "string",
+        "filterString": "customer_id=eq.{{ $json.id }}",
+        "options": {
+          "sort": "effective_date.desc",
+          "limit": 1
+        }
+      },
+      "id": "get-contract",
+      "name": "Get Contract Pricing",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-creds",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "product_usage",
+        "filterType": "string",
+        "filterString": "customer_id=eq.{{ $json.id }}",
+        "options": {
+          "sort": "usage_period_end.desc",
+          "limit": 1
+        }
+      },
+      "id": "get-usage-ovg",
+      "name": "Get Usage Data",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-creds",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "actual_charges",
+        "filterType": "string",
+        "filterString": "customer_id=eq.{{ $json.id }}",
+        "options": {
+          "sort": "billing_period_start.desc",
+          "limit": 1
+        }
+      },
+      "id": "get-charge-ovg",
+      "name": "Get Actual Charge",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-creds",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate expected overage charges\n\nconst customer = $('Loop Through Customers').first().json;\nconst contract = $('Get Contract Pricing').first().json;\nconst usage = $('Get Usage Data').first().json;\nconst actualCharge = $('Get Actual Charge').first().json;\n\n// Handle missing data\nif (!contract || !usage || !actualCharge) {\n  return [{\n    json: {\n      leakage_detected: false,\n      reason: 'Missing contract, usage, or charge data'\n    }\n  }];\n}\n\n// Parse JSON fields\nconst included = typeof contract.included_usage === 'string' \n  ? JSON.parse(contract.included_usage) \n  : contract.included_usage;\n  \nconst rates = typeof contract.overage_rates === 'string'\n  ? JSON.parse(contract.overage_rates)\n  : contract.overage_rates;\n  \nconst usageData = typeof usage.usage_data === 'string'\n  ? JSON.parse(usage.usage_data)\n  : usage.usage_data;\n\nlet expectedOverageCharges = 0;\nlet overageDetails = [];\n\n// Check API calls overage\nif (usageData.api_calls > included.api_calls) {\n  const excessCalls = usageData.api_calls - included.api_calls;\n  const overage = Math.ceil(excessCalls / 1000) * rates.api_calls_per_1000;\n  expectedOverageCharges += overage;\n  overageDetails.push({\n    metric: 'API Calls',\n    included: included.api_calls,\n    actual: usageData.api_calls,\n    excess: excessCalls,\n    charge: overage\n  });\n}\n\n// Check storage overage\nif (usageData.storage_gb > included.storage_gb) {\n  const excessStorage = usageData.storage_gb - included.storage_gb;\n  const overage = excessStorage * rates.storage_gb;\n  expectedOverageCharges += overage;\n  overageDetails.push({\n    metric: 'Storage (GB)',\n    included: included.storage_gb,\n    actual: usageData.storage_gb,\n    excess: excessStorage,\n    charge: overage\n  });\n}\n\n// What we actually charged\nconst actualOverageCharged = parseFloat(actualCharge.overage_charges || 0);\n\n// Calculate leakage\nconst difference = expectedOverageCharges - actualOverageCharged;\n\nif (difference > 1) {\n  // Determine severity\n  let severity = 'low';\n  if (difference > 500) {\n    severity = 'high';\n  } else if (difference > 100) {\n    severity = 'medium';\n  }\n  \n  return [{\n    json: {\n      leakage_detected: true,\n      customer_id: customer.id,\n      customer_email: customer.email,\n      customer_name: customer.name,\n      leakage_type: 'missing_overage',\n      severity: severity,\n      expected_overage: expectedOverageCharges,\n      actual_overage_charged: actualOverageCharged,\n      difference: difference,\n      monthly_leakage_amount: difference,\n      overage_details: overageDetails,\n      description: `Customer exceeded usage limits. Expected overage: $${expectedOverageCharges.toFixed(2)}, Actually charged: $${actualOverageCharged.toFixed(2)}. Missing: $${difference.toFixed(2)}.`,\n      detection_date: new Date().toISOString().split('T')[0]\n    }\n  }];\n} else {\n  return [{\n    json: {\n      leakage_detected: false,\n      reason: 'Overage charges are correct',\n      difference: difference\n    }\n  }];\n}"
+      },
+      "id": "calc-overages",
+      "name": "Calculate Expected Overages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.leakage_detected }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-overage-leak",
+      "name": "Missing Overages?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "leakage_detections",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "customer_id": "={{ $json.customer_id }}",
+            "detection_date": "={{ $json.detection_date }}",
+            "leakage_type": "={{ $json.leakage_type }}",
+            "severity": "={{ $json.severity }}",
+            "monthly_leakage_amount": "={{ $json.monthly_leakage_amount }}",
+            "description": "={{ $json.description }}",
+            "should_charge": "={{ $json.expected_overage }}",
+            "actually_charged": "={{ $json.actual_overage_charged }}",
+            "difference": "={{ $json.difference }}",
+            "status": "new"
+          }
+        }
+      },
+      "id": "insert-overage-detection",
+      "name": "Insert Leakage Detection",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1450, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-creds",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "⚠️ Missing Overage Charges Detected\n\n*Customer:* {{ $json.customer_name }}\n*Severity:* {{ $json.severity }}\n*Missing Amount:* ${{ $json.difference }}\n\n*Details:*\n{{ $json.description }}",
+        "channel": "revenue-alerts",
+        "otherOptions": {}
+      },
+      "id": "slack-overage",
+      "name": "Send Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [1650, 200],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-creds",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "continue-ovg",
+      "name": "Continue",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1650, 400]
+    }
+  ],
+  "connections": {
+    "Every Day at 9 AM": {
+      "main": [
+        [
+          {
+            "node": "Get All Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Customers": {
+      "main": [
+        [
+          {
+            "node": "Loop Through Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Through Customers": {
+      "main": [
+        [
+          {
+            "node": "Get Contract Pricing",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Usage Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Actual Charge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Contract Pricing": {
+      "main": [
+        [
+          {
+            "node": "Calculate Expected Overages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Usage Data": {
+      "main": [
+        [
+          {
+            "node": "Calculate Expected Overages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Actual Charge": {
+      "main": [
+        [
+          {
+            "node": "Calculate Expected Overages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Expected Overages": {
+      "main": [
+        [
+          {
+            "node": "Missing Overages?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Missing Overages?": {
+      "main": [
+        [
+          {
+            "node": "Insert Leakage Detection",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Continue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Leakage Detection": {
+      "main": [
+        [
+          {
+            "node": "Send Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Alert": {
+      "main": [
+        [
+          {
+            "node": "Continue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue": {
+      "main": [
+        [
+          {
+            "node": "Loop Through Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
