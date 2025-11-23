@@ -1,0 +1,200 @@
+{
+  "name": "02 - Product Usage Data Collection",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger-usage",
+      "name": "Every Day at 7 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "customers",
+        "returnAll": true
+      },
+      "id": "get-customers",
+      "name": "Get All Customers",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-creds",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 10,
+        "options": {}
+      },
+      "id": "split-batch",
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mock usage data generator\n// In production, this would call your actual product API\n\nconst customer = $input.first().json;\n\n// Generate realistic mock usage data\nconst baseUsage = {\n  api_calls: Math.floor(Math.random() * 50000) + 5000,\n  storage_gb: Math.floor(Math.random() * 150) + 20,\n  active_users: Math.floor(Math.random() * 50) + 5,\n  bandwidth_gb: Math.floor(Math.random() * 500) + 100\n};\n\n// Determine period\nconst endDate = new Date();\nconst startDate = new Date();\nstartDate.setDate(startDate.getDate() - 30);\n\nreturn [{\n  json: {\n    customer_id: customer.id,\n    stripe_customer_id: customer.stripe_customer_id,\n    usage_period_start: startDate.toISOString().split('T')[0],\n    usage_period_end: endDate.toISOString().split('T')[0],\n    usage_data: baseUsage\n  }\n}];"
+      },
+      "id": "generate-usage",
+      "name": "Get Usage Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "notesInFlow": true,
+      "notes": "Replace this with actual API call to your product"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "product_usage",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "customer_id": "={{ $json.customer_id }}",
+            "usage_period_start": "={{ $json.usage_period_start }}",
+            "usage_period_end": "={{ $json.usage_period_end }}",
+            "usage_data": "={{ JSON.stringify($json.usage_data) }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "insert-usage",
+      "name": "Insert Usage Data",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-creds",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "loop-back",
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "content": "✅ Usage Data Collection Complete\n\nCustomers Processed: {{ $('Get All Customers').all().length }}\nTime: {{ $now.toLocaleString() }}",
+        "channel": "revenue-alerts",
+        "otherOptions": {}
+      },
+      "id": "slack-complete",
+      "name": "Send Completion Notification",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [1450, 300],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-creds",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Day at 7 AM": {
+      "main": [
+        [
+          {
+            "node": "Get All Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Customers": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [
+          {
+            "node": "Get Usage Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Completion Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Usage Data": {
+      "main": [
+        [
+          {
+            "node": "Insert Usage Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Usage Data": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
