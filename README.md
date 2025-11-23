@@ -139,29 +139,30 @@ The system runs automatically via scheduled workflows:
 
 ## 📁 Project Structure
 ```
-revenue-leakage-detector/
-├── database/
-│   ├── schema.sql              # Database tables
-│   ├── sample-data.sql         # Test data
-│   └── migrations/             # Schema updates
-├── n8n-workflows/
-│   ├── 01-stripe-data-sync.json
-│   ├── 02-usage-collection.json
-│   ├── 03-detect-outdated-pricing.json
-│   ├── 04-detect-missing-overages.json
-│   ├── 05-daily-summary.json
-│   └── README.md
-├── docs/
-│   ├── architecture.md         # System design
-│   ├── detection-logic.md      # How detection works
-│   ├── setup-guide.md          # Detailed setup
-│   └── images/                 # Screenshots
-├── scripts/
-│   ├── test-detection.js       # Test detection rules
-│   └── generate-report.js      # Custom reports
-├── .env.example
-├── LICENSE
-└── README.md
+revenue_leakage_system/
+  ├── database/
+  │   ├── schema.sql
+  │   ├── sample-data.sql
+  │   └── migrations/
+  ├── n8n-workflows/
+  │   ├── 01-stripe-data-sync.json
+  │   ├── 02-usage-collection.json
+  │   ├── 03-detect-outdated-pricing.json
+  │   ├── 04-detect-missing-overages.json
+  │   ├── 05-daily-summary.json
+  │   └── README.md
+  ├── docs/
+  │   ├── architecture.md
+  │   ├── detection-logic.md
+  │   ├── setup-guide.md
+  │   └── images/
+  ├── scripts/
+  │   ├── test-detection.js
+  │   └── generate-report.js
+  ├── .env.example
+  ├── LICENSE
+  ├── CONTRIBUTING.md
+  └── README.md
 ```
 
 ## 🔧 Configuration
