@@ -81,8 +81,8 @@ Automatically detects 4 types of revenue leakage:
 
 **1. Clone the repository**
 ```bash
-git clone https://github.com/yourusername/revenue-leakage-detector.git
-cd revenue-leakage-detector
+git clone https://github.com/Etherlabs-dev/revenue_leakage_system.git
+cd revenue_leakage_system
 ```
 
 **2. Set up Supabase database**
@@ -212,11 +212,9 @@ if (severity === 'high') {
 
 ## 📖 Documentation
 
-- [System Architecture](./docs/architecture.md) - Technical design details
-- [Detection Logic](./docs/detection-logic.md) - How each detection type works
-- [Setup Guide](./docs/setup-guide.md) - Step-by-step installation
-- [API Reference](./docs/api-reference.md) - Database schema & queries
-- [Troubleshooting](./docs/troubleshooting.md) - Common issues
+- [System Architecture](.[/docs/architecture.md](https://dev.to/etherlabsdev/i-built-a-system-that-found-663k-in-lost-revenue-heres-the-complete-technical-breakdown-33c5)) - Technical design details
+- [Workflow Logic](./n8n-workflows/README.md) - How each detection type works
+- [Troubleshooting](.[/docs/troubleshooting.md](https://github.com/Etherlabs-dev/revenue_leakage_system/issues)) - Common issues
 
 ## 🧪 Testing
 
@@ -325,11 +323,11 @@ Inspired by real problems at my credit card company.
 
 ## ⭐ Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=yourusername/revenue-leakage-detector&type=Date)](https://star-history.com/#yourusername/revenue-leakage-detector&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Etherlabs-dev/revenue_leakage_system&type=Date)](https://star-history.com/#Etherlabs-dev/revenue-leakage-system&Date)
 
 ---
 
-**Built by [Your Name](https://yourwebsite.com)**  
+**Built by [Ugo Chukwu]([https://yourwebsite.com](https://dev.to/etherlabsdev/i-built-a-system-that-found-663k-in-lost-revenue-heres-the-complete-technical-breakdown-33c5))**  
 Credit Card Company Founder | Financial Automation Specialist
 
-[LinkedIn](https://linkedin.com/in/yourprofile) · [Twitter](https://twitter.com/yourhandle) · [Website](https://yourwebsite.com)
+[LinkedIn](https://www.linkedin.com/in/ugo-chukwu/) · [Twitter](https://x.com/ChukwuAugustus) · [Website](https://dev.to/etherlabsdev/i-built-a-system-that-found-663k-in-lost-revenue-heres-the-complete-technical-breakdown-33c5)
