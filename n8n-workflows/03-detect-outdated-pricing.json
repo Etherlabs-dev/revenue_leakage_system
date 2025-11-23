@@ -1,0 +1,346 @@
+{
+  "name": "03 - Detect Outdated Pricing",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-detect",
+      "name": "Every Day at 8 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "customers",
+        "returnAll": true
+      },
+      "id": "get-all-customers",
+      "name": "Get All Customers",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-creds",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-customers",
+      "name": "Loop Through Customers",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "pricing_rules",
+        "filterType": "string",
+        "filterString": "plan_name=eq.{{ $json.current_plan }}"
+      },
+      "id": "get-pricing-rule",
+      "name": "Get Current Pricing Rule",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-creds",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "actual_charges",
+        "filterType": "string",
+        "filterString": "customer_id=eq.{{ $json.id }}",
+        "options": {
+          "sort": "billing_period_start.desc",
+          "limit": 1
+        }
+      },
+      "id": "get-actual-charge",
+      "name": "Get Latest Charge",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [850, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-creds",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Compare pricing to detect leakage\n\nconst customer = $('Loop Through Customers').first().json;\nconst pricingRule = $('Get Current Pricing Rule').first().json;\nconst actualCharge = $('Get Latest Charge').first().json;\n\n// Handle cases where data might be missing\nif (!pricingRule || !actualCharge) {\n  return [{\n    json: {\n      leakage_detected: false,\n      reason: 'Missing pricing rule or charge data'\n    }\n  }];\n}\n\n// What they SHOULD pay\nconst shouldPay = parseFloat(pricingRule.current_base_price);\n\n// What they ARE paying\nconst actuallyPaying = parseFloat(actualCharge.base_charge);\n\n// Calculate difference\nconst difference = shouldPay - actuallyPaying;\n\n// Only flag if difference is meaningful (>$1)\nif (difference > 1) {\n  // Calculate severity\n  let severity = 'low';\n  if (difference > 500) {\n    severity = 'high';\n  } else if (difference > 100) {\n    severity = 'medium';\n  }\n  \n  return [{\n    json: {\n      leakage_detected: true,\n      customer_id: customer.id,\n      customer_email: customer.email,\n      customer_name: customer.name,\n      leakage_type: 'outdated_pricing',\n      severity: severity,\n      should_charge: shouldPay,\n      actually_charged: actuallyPaying,\n      difference: difference,\n      monthly_leakage_amount: difference,\n      description: `Customer is on old pricing. Should be $${shouldPay}/mo, currently paying $${actuallyPaying}/mo. Difference: $${difference}/mo.`,\n      detection_date: new Date().toISOString().split('T')[0]\n    }\n  }];\n} else {\n  return [{\n    json: {\n      leakage_detected: false,\n      reason: 'Pricing is current',\n      difference: difference\n    }\n  }];\n}"
+      },
+      "id": "compare-pricing",
+      "name": "Compare Pricing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.leakage_detected }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-leakage",
+      "name": "Leakage Detected?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "leakage_detections",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "customer_id": "={{ $json.customer_id }}",
+            "detection_date": "={{ $json.detection_date }}",
+            "leakage_type": "={{ $json.leakage_type }}",
+            "severity": "={{ $json.severity }}",
+            "monthly_leakage_amount": "={{ $json.monthly_leakage_amount }}",
+            "description": "={{ $json.description }}",
+            "should_charge": "={{ $json.should_charge }}",
+            "actually_charged": "={{ $json.actually_charged }}",
+            "difference": "={{ $json.difference }}",
+            "status": "new"
+          }
+        }
+      },
+      "id": "insert-detection",
+      "name": "Insert Leakage Detection",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1450, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-creds",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.severity }}",
+              "value2": "high"
+            }
+          ]
+        }
+      },
+      "id": "if-high-severity",
+      "name": "Is High Severity?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "content": "🚨 HIGH PRIORITY REVENUE LEAKAGE DETECTED\n\n*Customer:* {{ $json.customer_name }} ({{ $json.customer_email }})\n*Issue:* Outdated Pricing\n*Monthly Loss:* ${{ $json.monthly_leakage_amount }}\n\n*Should charge:* ${{ $json.should_charge }}/mo\n*Actually charging:* ${{ $json.actually_charged }}/mo\n\n_View details in dashboard_",
+        "channel": "revenue-alerts",
+        "otherOptions": {}
+      },
+      "id": "slack-alert",
+      "name": "Send High Priority Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [1850, 100],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-creds",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "continue-loop",
+      "name": "Continue",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1850, 300]
+    }
+  ],
+  "connections": {
+    "Every Day at 8 AM": {
+      "main": [
+        [
+          {
+            "node": "Get All Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Customers": {
+      "main": [
+        [
+          {
+            "node": "Loop Through Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Through Customers": {
+      "main": [
+        [
+          {
+            "node": "Get Current Pricing Rule",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Latest Charge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Current Pricing Rule": {
+      "main": [
+        [
+          {
+            "node": "Compare Pricing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Latest Charge": {
+      "main": [
+        [
+          {
+            "node": "Compare Pricing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compare Pricing": {
+      "main": [
+        [
+          {
+            "node": "Leakage Detected?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leakage Detected?": {
+      "main": [
+        [
+          {
+            "node": "Insert Leakage Detection",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Continue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Leakage Detection": {
+      "main": [
+        [
+          {
+            "node": "Is High Severity?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is High Severity?": {
+      "main": [
+        [
+          {
+            "node": "Send High Priority Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Continue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send High Priority Alert": {
+      "main": [
+        [
+          {
+            "node": "Continue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue": {
+      "main": [
+        [
+          {
+            "node": "Loop Through Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
